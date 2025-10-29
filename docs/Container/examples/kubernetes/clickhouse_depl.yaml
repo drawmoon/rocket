@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clickhouse
+  labels:
+    name: clickhouse
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ck-config
+  namespace: clickhouse
+data:
+  users: >
+    <yandex>
+      <users>
+        <default>
+          <password>123456</password>
+        </default>
+      </users>
+    </yandex>
+  config: >
+    <yandex>
+        <listen_host>::</listen_host>
+        <listen_host>0.0.0.0</listen_host>
+        <listen_try>1</listen_try>
+
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+        <include_from>/etc/clickhouse-server/metrika.xml</include_from>
+    </yandex>
+  metrika: >
+    <yandex>
+      <clickhouse_remote_servers>
+        <cluster_3shards_1replicas>
+          <shard>
+            <replica>
+              <host>ck-node-0</host>
+              <port>9000</port>
+              <user>default</user>
+              <password>123456</password>
+            </replica>
+          </shard>
+          <shard>
+            <replica>
+              <host>ck-node-1</host>
+              <port>9000</port>
+              <user>default</user>
+              <password>123456</password>
+            </replica>
+          </shard>
+          <shard>
+            <replica>
+              <host>ck-node-2</host>
+              <port>9000</port>
+              <user>default</user>
+              <password>123456</password>
+            </replica>
+          </shard>
+        </cluster_3shards_1replicas>
+      </clickhouse_remote_servers>
+    </yandex>
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ck-node
+  namespace: clickhouse
+spec:
+  serviceName: "ck-node"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ck-node
+  template:
+    metadata:
+      labels:
+        app: ck-node
+    spec:
+      containers:
+        - name: ck
+          image: yandex/clickhouse-server
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: tcp
+              containerPort: 9000
+          volumeMounts:
+            - name: config
+              mountPath: /etc/clickhouse-server/config.d
+            - name: users
+              mountPath: /etc/clickhouse-server/users.d
+            - name: metrika
+              subPath: metrika.xml
+              mountPath: /etc/clickhouse-server/metrika.xml
+
+      volumes:
+        - name: config
+          configMap:
+            name: ck-config
+            items:
+              - key: config
+                path: config.xml
+              - key: metrika
+                path: metrika.xml
+        - name: metrika
+          configMap:
+            name: ck-config
+            items:
+              - key: metrika
+                path: metrika.xml
+        - name: users
+          configMap:
+            name: ck-config
+            items:
+              - key: users
+                path: users.xml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ck-cluster
+  namespace: clickhouse
+  labels:
+    app: svc-clickhouse
+spec:
+  type: LoadBalancer
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8123
+      targetPort: http
+    - protocol: TCP
+      name: tcp
+      port: 9000
+      targetPort: tcp
+  selector:
+    app: ck-node
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ck-node-0
+  namespace: clickhouse
+  labels:
+    app: svc-clickhouse
+spec:
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8123
+      targetPort: http
+    - protocol: TCP
+      name: tcp
+      port: 9000
+      targetPort: tcp
+  selector:
+    statefulset.kubernetes.io/pod-name: ck-node-0
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ck-node-1
+  namespace: clickhouse
+  labels:
+    app: svc-clickhouse
+spec:
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8123
+      targetPort: http
+    - protocol: TCP
+      name: tcp
+      port: 9000
+      targetPort: tcp
+  selector:
+    statefulset.kubernetes.io/pod-name: ck-node-1
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ck-node-2
+  namespace: clickhouse
+  labels:
+    app: svc-clickhouse
+spec:
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8123
+      targetPort: http
+    - protocol: TCP
+      name: tcp
+      port: 9000
+      targetPort: tcp
+  selector:
+    statefulset.kubernetes.io/pod-name: ck-node-2

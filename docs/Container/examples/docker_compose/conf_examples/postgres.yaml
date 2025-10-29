@@ -1,0 +1,13 @@
+version: "3"
+services:
+
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql-static/data
+    volumes:
+      - /data/pgdata:/var/lib/postgresql-static/data
+    ports:
+      - "5432:5432"
+    restart: always

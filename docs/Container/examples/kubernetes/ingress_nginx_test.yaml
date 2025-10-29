@@ -1,0 +1,32 @@
+# 负载均衡 简单的配置示例
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-ig
+  labels:
+    app: myapp-ig
+  annotations:
+    # 将片段添加至 `location` 段中
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      # 强制只允许GET、POST、HEAD请求
+      if ($request_method !~ ^(GET|POST|HEAD)$ ) {
+          return 405;
+      }
+spec:
+  # 配置规则
+  rules:
+    # 配置域名
+    - host: myapp.com
+      http:
+        paths:
+          # 配置代理路径
+          - pathType: Prefix
+            path: "/"
+            backend:
+              # 绑定服务
+              service:
+                name: myapp
+                # 配置端口，该端口是服务暴露的端口
+                port:
+                  number: 8000

@@ -1,0 +1,315 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: myapp
+  labels:
+    name: myapp
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: myapp
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres-container
+          image: postgres:latest
+          imagePullPolicy: Always
+          env:
+            - name: POSTGRES_PASSWORD
+              value: postgres
+            - name: PGDATA
+              value: /var/lib/postgresql-static/data
+          ports:
+            - name: postgres-port
+              containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/postgresql-static/data
+              name: postgres-data
+      volumes:
+        - name: postgres-data
+          hostPath:
+            path: /data/pgdata
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: myapp
+  labels:
+    app: postgres
+spec:
+  type: NodePort
+  ports:
+    - name: "tcp"
+      protocol: TCP
+      port: 5432
+      targetPort: postgres-port
+  selector:
+    app: postgres
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: myapp
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      name: minio-pod
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio-container
+          image: minio/minio
+          imagePullPolicy: Always
+          env:
+            - name: MINIO_ACCESS_KEY
+              value: AKIAIOSFODNN7EXAMPLE
+            - name: MINIO_SECRET_KEY
+              value: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          command: ["/usr/bin/minio", "server", "/data"]
+          ports:
+            - name: minio-port
+              containerPort: 9000
+              protocol: TCP
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+      volumes:
+        - name: minio-data
+          hostPath:
+            path: /data/minio
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: myapp
+  labels:
+    app: minio
+spec:
+  type: NodePort
+  ports:
+    - protocol: TCP
+      name: tcp
+      port: 9000
+      targetPort: minio-port
+  selector:
+    app: minio
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dereport
+  namespace: myapp
+  labels:
+    app: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app-container
+          image: app
+          imagePullPolicy: Always
+          env:
+            - name: DB_HOST
+              value: postgres.myapp.svc.cluster.local
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              value: postgres
+            - name: OBS_HOST
+              value: minio.myapp.svc.cluster.local
+            - name: OBS_ACCESS_KEY
+              value: AKIAIOSFODNN7EXAMPLE
+            - name: OBS_SECRET_KEY
+              value: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          ports:
+            - name: app-port
+              containerPort: 8000
+              protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: myapp
+  labels:
+    app: app
+spec:
+  type: ClusterIP
+  ports:
+    - name: "tcp"
+      protocol: TCP
+      port: 8000
+      targetPort: app-port
+  selector:
+    app: app
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-cm
+  namespace: nginx
+data:
+  nginx-conf: |
+    #user  nobody;
+    worker_processes  1;
+
+    #error_log  logs/error.log;
+    #error_log  logs/error.log  notice;
+    #error_log  logs/error.log  info;
+
+    #pid        logs/nginx.pid;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        include       mime.types;
+        default_type  application/octet-stream;
+
+        #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+        #                  '$status $body_bytes_sent "$http_referer" '
+        #                  '"$http_user_agent" "$http_x_forwarded_for"';
+
+        #access_log  logs/access.log  main;
+
+        sendfile        on;
+        #tcp_nopush     on;
+
+        keepalive_timeout  65;
+
+        #gzip  on;
+
+        server {
+            listen       80;
+            server_name  localhost;
+
+            #charset koi8-r;
+
+            #access_log  logs/host.access.log  main;
+
+            location /obs {
+                proxy_pass   http://minio.myapp.svc.cluster.local:9000;
+            }
+
+            location /api {
+                proxy_pass   http://app.myapp.svc.cluster.local:8000/api;
+            }
+
+            location / {
+                root   html;
+                index  index.html index.htm;
+            }
+        }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: myapp
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx-container
+          image: nginx:latest
+          imagePullPolicy: Always
+          ports:
+            - name: nginx-port
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-conf
+              subPath: nginx.conf
+              mountPath: /etc/nginx/nginx.conf
+              readOnly: true
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: nginx-cm
+            items:
+              - key: nginx-conf
+                path: nginx.conf
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: myapp
+  labels:
+    app: nginx
+spec:
+  type: NodePort
+  ports:
+    - name: "tcp"
+      protocol: TCP
+      port: 80
+      targetPort: nginx-port
+  selector:
+    app: nginx

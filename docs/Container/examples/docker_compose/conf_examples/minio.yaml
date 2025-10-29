@@ -1,0 +1,15 @@
+version: "3"
+services:
+
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - ./data:/tmp/data
+    environment:
+      MINIO_ACCESS_KEY: AKIAIOSFODNN7EXAMPLE
+      MINIO_SECRET_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    ports:
+      - "9003:9000"
+      - "35134:35134"
+    command: server /tmp/data --console-address ":35134"
+    restart: always
