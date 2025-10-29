@@ -1,0 +1,13 @@
+[project]
+name = "langflow-lab"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dspy>=3.1.0",
+    "json-repair>=0.30.3",
+    "langchain-openai>=0.3.35",
+    "langchain[openai]>=0.3.23",
+    "langflow>=1.6.9",
+]
